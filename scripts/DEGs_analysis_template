@@ -1,0 +1,250 @@
+# Script exemple for Aeschenomene evenia
+lapply(c("ggplot2","gridExtra","reshape2","mixOmics","RColorBrewer","edgeR","VennDiagram","devtools","dplyr","data.table","pvclust","EnhancedVolcano")), require, character.only = TRUE)
+
+# set working directory
+setwd("~/Aeseve/Nod")
+# create output directories
+dir.create("edgeR_results")
+dir.create("edgeR_results/All_DEGs");dir.create("edgeR_results/All_Down");dir.create("edgeR_results/All_Up")
+dir.create("edgeR_results/Time_DEGs");dir.create("edgeR_results/Time_Down");dir.create("edgeR_results/Time_Up")
+## ----importData, message=FALSE-------------------------------------------
+# import raw count data
+rawCountTable <- read.table("./star_salmon/salmon.merged.gene_counts.tsv", header = TRUE, row.names = 1)
+rawCountTable <- as.matrix(rawCountTable)
+row.names(rawCountTable) <- gsub("Ae", "Aeseve_Ae",row.names(rawCountTable))
+
+# create sample info
+sampleInfo <- data.frame(librairies=colnames(rawCountTable))
+sampleInfo = tidyr::separate(sampleInfo,librairies,c("species","treatment","time","rep"),remove=FALSE)
+## ----checkDesign---------------------------------------------------------
+head(sampleInfo)
+sampleInfo$group <- as.factor(paste0(sampleInfo$species,"_",sampleInfo$treatment,"_",sampleInfo$time))
+
+## ----filterCounts, remove genes with less than 10 mean reads counts per sample group --------------------------------------------------------
+sublist<-c()
+n<-dim(rawCountTable)[1]
+cutoff<-10
+design2<-sampleInfo
+pb <- txtProgressBar(min = 1, max =n, style = 3)
+for (k in 1:n){
+        design2$test<-rawCountTable[k,]>cutoff
+        grouped<-group_by(design2, group)
+        test<-summarise(grouped, keep = all(test))
+        if(length(which(test$keep == TRUE)>0)){sublist<-c(sublist,k)}
+        setTxtProgressBar(pb, k)
+}
+raw_counts_wn<-rawCountTable[sublist,]
+dim(raw_counts_wn)
+write.table(raw_counts_wn, file="./star_salmon/salmon.merged.gene_counts_filtered.txt", sep="\t", quote = FALSE, row.names = TRUE, col.names=TRUE)
+
+# open "cleaned" gene count
+rawCountTable <- read.table("./star_salmon/salmon.merged.gene_counts_filtered.txt", header = TRUE, row.names = 1)
+rawCountTable <- as.matrix(rawCountTable)
+
+sampleInfo <- data.frame(librairies=colnames(rawCountTable))
+sampleInfo = tidyr::separate(sampleInfo,librairies,c("species","treatment","time","rep"),remove=FALSE)
+
+## ----checkData-----------------------------------------------------------
+head(rawCountTable)
+dim(rawCountTable)
+
+## ----checkDesign---------------------------------------------------------
+head(sampleInfo)
+sampleInfo$group <- as.factor(paste0(sampleInfo$species,"_",sampleInfo$treatment,"_",sampleInfo$time))
+
+## ----DGEListCreation-----------------------------------------------------
+dgeFull <- DGEList(rawCountTable, remove.zeros = TRUE)
+
+## ----DGEListSamples------------------------------------------------------
+dgeFull
+
+## ----pseudoCounts--------------------------------------------------------
+pseudoCounts <- log2(dgeFull$counts + 1)
+head(pseudoCounts)
+
+## ----boxplotPseudoCounts-------------------------------------------------
+par(mfrow = c(1,1))
+boxplot(pseudoCounts, col = "gray", las = 3, cex.names = 1)
+
+## ----countsAfterNorm-----------------------------------------------------
+head(dgeFull$counts)
+normalizedData=data.frame(dgeFull$counts)
+
+## ----sampleInfoAfterNorm-------------------------------------------------
+dgeFull$samples
+
+## ----estimateNormCounts, fig.width=10, fig.height=10---------------------
+normCounts <- cpm(dgeFull)
+pseudoNormCounts <- cpm(dgeFull, log = TRUE, prior.count = 1)
+
+#par(mar = c(8,4,1,2))
+boxplot(pseudoNormCounts, col = "gray", las = 3, cex.names = 1)
+
+## ---- GLM condition effects --------------------------
+## ----estimateNormFactors-------------------------------------------------
+dgeFull$samples$lib.size<-colSums(dgeFull$counts)
+dgeFull <- calcNormFactors(dgeFull, method="TMM")
+dgeFull
+CPM_dgeFull_TMM <- cpm(dgeFull, normalized.lib.sizes = TRUE)
+write.table(CPM_dgeFull_TMM, "./edgeR_results/CPM_dgeFull_TMM_norm.txt",quote=F,col.names=T,sep="\t")
+#### Clustering analysis ####
+logCPM_dgeFull_TMM <- cpm(dgeFull, normalized.lib.sizes = TRUE, log=TRUE, prior.count = 1)
+logresult <- pvclust(logCPM_dgeFull_TMM, method.dist="cor",method.hclust="ward.D2", nboot=1000)
+
+pdf(paste0("./edgeR_results/Sample_clustering_logCPM_dgeFull_TMM_wardD2_nboot1000.pdf"), height = 10, width = 10)
+plot(logresult,print.pv="au",print.num=FALSE)
+pvrect(logresult)
+dev.off()
+
+CPMbygroup_dgeFull_TMM <- cpmByGroup(dgeFull, normalized.lib.sizes = TRUE, group=c(as.character(sampleInfo$group)))
+write.table(CPMbygroup_dgeFull_TMM, "./edgeR_results/Mean_CPM_dgeFull_TMM_norm_by_group.txt",quote=F,col.names=T,sep="\t")
+
+group <- factor(sampleInfo$group)
+
+design <- model.matrix(~0+group)
+design
+
+
+## ----estimateDispersionGLM, cache=TRUE-----------------------------------
+dgedisp  <- estimateDisp(dgeFull, design)
+
+head(dgedisp)
+
+## ----plotBCVGLM----------------------------------------------------------
+plotBCV(dgedisp)
+
+## ----GLMfit--------------------------------------------------------------
+fit <- glmFit(dgedisp, design)
+fit
+head(fit$coefficients)
+
+## ----LRTtest-------------------------------------------------------------
+fit$design
+
+unique(sampleInfo$group)
+
+#### Concat data ####
+unique(sampleInfo$group)
+unique(sampleInfo$time)
+All_data = data.frame(Gene_id = rownames(fit$fitted.values))
+
+# TIMES => different timepoints
+TIMES = c("6HPI","24HPI","2DPI","4DPI","6DPI")
+logFC <- c(0.5,1,1.2,1.5)
+for(LOG in logFC){
+All_data = data.frame(Gene_id = rownames(fit$fitted.values))
+for(time in TIMES){
+CONTRAST <- eval(parse(text = paste0("makeContrasts(group",unique(sampleInfo$species),"_Nod_",time," - group",unique(sampleInfo$species),"_Nod_T0, levels = design)")))
+dgeLRTtest <- glmLRT(fit, contrast = CONTRAST)
+ 
+resLRT <- topTags(dgeLRTtest, n = "Inf")
+resLRT_table <- resLRT$table
+resLRT_table <- dplyr::select(resLRT_table,logFC,FDR)
+resLRT_table$updown <- "ns"
+resLRT_table$updown[resLRT_table$logFC > LOG & resLRT_table$FDR <0.05] <- "up"
+resLRT_table$updown[resLRT_table$logFC < as.numeric(paste0("-",LOG)) & resLRT_table$FDR <0.05] <- "down"
+resLRT_table$updown[resLRT_table$FDR >0.05] <- "ns"
+ 
+PLOT <- resLRT_table
+PLOT$FDR[PLOT$FDR==0] <- min(PLOT$FDR[PLOT$FDR!=0])
+
+pdf(paste0("./edgeR_results/volcano_plot_DEGs_Nod_",time,"_logFC",LOG,".pdf"))
+print(EnhancedVolcano(PLOT,lab = rownames(PLOT),selectLab = c(""),x = 'logFC',y = 'FDR',
+title = paste0("Nod vs T0 ",time," logFC",LOG),pCutoff = 0.05,ylim = c(0,30),
+FCcutoff = LOG,pointSize = 1.0,labSize = 2.0))
+dev.off()
+
+
+keyvals <- ifelse(
+  PLOT$logFC < as.numeric(paste0("-",LOG)) & PLOT$FDR <0.05, 'royalblue',
+  ifelse(PLOT$logFC > LOG & PLOT$FDR <0.05, 'gold',
+         'black'))
+keyvals[is.na(keyvals)] <- 'black'
+names(keyvals)[keyvals == 'gold'] <- 'Up'
+names(keyvals)[keyvals == 'black'] <- 'n.s.'
+names(keyvals)[keyvals == 'royalblue'] <- 'Down'
+
+
+keyvals.colour <- ifelse(
+  PLOT$logFC < as.numeric(paste0("-",LOG)) & PLOT$FDR <0.05, 'royalblue',
+  ifelse(PLOT$logFC > as.numeric(LOG) & PLOT$FDR <0.05, 'gold',
+         'black'))
+keyvals.colour[is.na(keyvals.colour)] <- 'black'
+names(keyvals.colour)[keyvals.colour == 'gold'] <- 'Up'
+names(keyvals.colour)[keyvals.colour == 'black'] <- 'n.s.'
+names(keyvals.colour)[keyvals.colour == 'royalblue'] <- 'Down'
+
+p2 <- EnhancedVolcano(PLOT,
+                      lab = rownames(PLOT),selectLab = c(""),
+                      x = 'logFC',
+                      xlim=c(-6,6),
+                      y = 'FDR',
+                      ylim = c(0,30),
+                      pointSize = 4.0,
+                      pCutoff = 0.05,
+                      shape = c(19),
+                      FCcutoff = LOG,
+                      labSize = 0.0,
+                      colCustom = keyvals.colour,
+                      colAlpha = 0.8,
+                      legendPosition = 'right',
+                      legendLabSize = 15,
+                      legendIconSize = 5.0,
+                      gridlines.major = FALSE,
+                      gridlines.minor = FALSE,
+                      border = 'full',
+                      borderWidth = 1.0,
+                      borderColour = 'black')
+
+pdf(paste0("./edgeR_results/volcano_plot_figure_Nod_",time,"_logFC",LOG,".pdf"),height=10,width=10)
+print(p2)
+dev.off()
+
+
+tiff(paste0("./edgeR_results/volcano_plot_figure_Nod_",time,"_logFC",LOG,".tiff"),height=1000,width=1000)
+print(p2)
+dev.off()
+
+
+names(resLRT_table) <- paste0(names(resLRT_table),"_",time)
+resLRT_table$Gene_id <- rownames(resLRT_table)
+ 
+All_data <- full_join(All_data,resLRT_table,by="Gene_id")
+ 
+}
+write.table(All_data, paste0("./edgeR_results/DEG_",unique(sampleInfo$species),"_Nod_vs_T0_logFC",LOG,".txt"),quote=FALSE, col.names = TRUE, row.names = FALSE,sep="\t")
+}
+
+#### List of DEGs for orthogroup analysis
+TIMES = c("6HPI","24HPI","2DPI","4DPI","6DPI")
+logFC <-c(0.5,1,1.2,1.5)
+for(LOG in logFC){
+All_data <- as.data.frame(fread(paste0("./edgeR_results/DEG_",unique(sampleInfo$species),"_Nod_vs_T0_logFC",LOG,".txt")))
+
+All_DEGs <- c();All_Up <- c(); All_Down <- c()
+
+for(time in TIMES){
+        subset_time <- dplyr::select(All_data,Gene_id,matches(time))
+        DEGs <- subset_time[subset_time[,4]=="up" | subset_time[,4]=="down",]
+        write.table(DEGs$Gene_id, paste0("./edgeR_results/Time_DEGs/",unique(sampleInfo$species),"_Nod",time,"DEGs_FDR005_logFC",LOG,".txt"),quote=FALSE, col.names = FALSE, row.names = FALSE,sep="\t")
+        All_DEGs <- unique(append(All_DEGs,DEGs$Gene_id))
+        
+        Up <- DEGs[DEGs[,4]=="up",]
+        write.table(Up$Gene_id, paste0("./edgeR_results/Time_Up/",unique(sampleInfo$species),"_Nod",time,"Up_FDR005_logFC",LOG,".txt"),quote=FALSE, col.names = FALSE, row.names = FALSE,sep="\t")
+        All_Up <- unique(append(All_Up,Up$Gene_id))
+        
+        Down <- DEGs[DEGs[,4]=="down",]
+        write.table(Down$Gene_id, paste0("./edgeR_results/Time_Down/",unique(sampleInfo$species),"_Nod",time,"Down_FDR005_logFC",LOG,".txt"),quote=FALSE, col.names = FALSE, row.names = FALSE,sep="\t")
+        All_Down <- unique(append(All_Down,Down$Gene_id))
+}
+
+#DEGs <- All_data[All_data$FDR_24DPI<0.05,]
+write.table(All_DEGs, paste0("./edgeR_results/All_DEGs/",unique(sampleInfo$species),"_NodAllDEGs_FDR005_logFC",LOG,".txt"),quote=FALSE, col.names = FALSE, row.names = FALSE,sep="\t")
+
+#Up <- DEGs[DEGs$updown_24DPI=="up",]
+write.table(All_Up, paste0("./edgeR_results/All_Up/",unique(sampleInfo$species),"_NodAllUp_FDR005_logFC",LOG,".txt"),quote=FALSE, col.names = FALSE, row.names = FALSE,sep="\t")
+
+#Down <- DEGs[DEGs$updown_24DPI=="down",]
+write.table(All_Down, paste0("./edgeR_results/All_Down/",unique(sampleInfo$species),"_NodAllDown_FDR005_logFC",LOG,".txt"),quote=FALSE, col.names = FALSE, row.names = FALSE,sep="\t")
+}
+
