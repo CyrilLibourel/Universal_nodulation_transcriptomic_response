@@ -4,7 +4,7 @@ This GitHub page provide R scripts developped for 'Comparative phylotranscriptom
 
 The different scripts were used under :
 
-- R version 4.1.2 (2021-11-01)
+- R version 4.2.2 (2022-10-31 ucrt)
 - Platform: x86_64-w64-mingw32/x64 (64-bit)
 - Running under: Windows 10 x64 (build 19044)
 
