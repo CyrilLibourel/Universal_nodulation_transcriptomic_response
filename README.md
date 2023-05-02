@@ -1,6 +1,6 @@
-# Universal nodulation transcriptomic response
+# Comparative phylotranscriptomics reveals ancestral and derived root nodule symbiosis programs
 
-This GitHub page provide R scripts developped for 'Comparative phylotranscriptomics reveals a 110 million years-old symbiotic program'
+This GitHub page provide R scripts developped for 'Comparative phylotranscriptomics reveals ancestral and derived root nodule symbiosis programs'
 
 The different scripts were used under :
 
