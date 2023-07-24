@@ -2,7 +2,7 @@
 lapply(c("data.table","dplyr","stringr","ape","seqinr","adephylo","tidyverse","tidyr","VennDiagram","DBI","grid","mixOmics","DECIPHER","Biostrings","gridExtra",
          "UpSetR","gaston","bio3d","phytools","phylobase","ggtree","ggplot2","castor","ComplexHeatmap","circlize","dbplyr","wesanderson"), library, character.only = TRUE)
 
-setwd("//194.199.55.66/evo/commun/projects/nodMimosa/Analysis_v3")
+setwd("WORKING_DIRECTORY")
 sqlite_db_out <- "C:/Users/cyril.libourel/OneDrive/mimosaProject/work/Sql_db.sqlite"
 outcon <- dbConnect(RSQLite::SQLite(), dbname=sqlite_db_out)
 src_dbi(outcon)
