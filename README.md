@@ -1,6 +1,6 @@
 # Comparative phylotranscriptomics reveals ancestral and derived root nodule symbiosis programs
 
-This GitHub page provide R scripts developped for [Comparative phylotranscriptomics reveals ancestral and derived root nodule symbiosis programs](https://www.nature.com/articles/s41477-023-01441-w).
+This GitHub page provide R scripts developped for [Comparative phylotranscriptomics reveals ancestral and derived root nodule symbiosis programmes](https://www.nature.com/articles/s41477-023-01441-w).
 
 The different scripts were used under :
 
